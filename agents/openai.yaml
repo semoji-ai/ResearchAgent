@@ -1,0 +1,7 @@
+interface:
+  display_name: "LLM Wiki Research"
+  short_description: "End-to-end deep research into a reusable wiki"
+  default_prompt: "Use $llm-wiki-research to run a full deep-research loop into a user-configured research root with launcher-prepared session bundles, resumable run stages, packet-based parallel collection, source quality grades, cross-verification, and reusable topic snapshots."
+
+policy:
+  allow_implicit_invocation: true

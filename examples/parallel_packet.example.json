@@ -1,0 +1,87 @@
+{
+  "packet_id": "steamships-web-pass-01",
+  "axis": "steamships chronology and adoption",
+  "agent_role": "web-explorer",
+  "summary": "Bounded web pass on the industrial transition from sail to steam.",
+  "sources": [
+    {
+      "source_key": "greenwich-ships-history",
+      "title": "Royal Museums Greenwich: History of Ships",
+      "source_url": "https://example.com/ships-history",
+      "source_kind": "reference",
+      "quality_grade": "B",
+      "summary": "High-level chronology of ship evolution.",
+      "key_points": [
+        "Sail dominated before industrial steam adoption.",
+        "Steam power improved route reliability."
+      ],
+      "note_markdown": "## Extract\n- Example evidence note.",
+      "tags": [
+        "history",
+        "transport"
+      ]
+    },
+    {
+      "source_key": "academic-shipping-study",
+      "title": "Journal of Maritime History: Steam Shipping Transition",
+      "source_url": "https://example.com/maritime-study",
+      "source_kind": "academic",
+      "quality_grade": "A",
+      "summary": "Scholarly overview of economic and operational changes during steamship adoption.",
+      "key_points": [
+        "Steamships reduced schedule uncertainty relative to sail on major routes.",
+        "Adoption patterns varied by region and port infrastructure."
+      ],
+      "note_markdown": "## Extract\n- Example academic evidence note.",
+      "tags": [
+        "history",
+        "academic"
+      ]
+    }
+  ],
+  "claims": [
+    {
+      "claim_key": "steamship-reliability",
+      "claim": "19th century steamships materially improved long-distance shipping reliability.",
+      "kind": "fact",
+      "confidence": "high",
+      "evidence": "Multiple historical summaries converge on reliability gains from steam power.",
+      "source_keys": [
+        "greenwich-ships-history",
+        "academic-shipping-study"
+      ],
+      "linked_pages": [
+        "timeline"
+      ]
+    }
+  ],
+  "images": [
+    {
+      "title": "Steamship illustration",
+      "source_url": "https://example.com/steamship-gallery",
+      "asset_url": "https://example.com/assets/steamship.jpg",
+      "caption": "Illustration of a 19th century steamship.",
+      "creator": "Example Maritime Museum",
+      "license_name": "CC BY 4.0",
+      "license_url": "https://creativecommons.org/licenses/by/4.0/",
+      "attribution_text": "Example Maritime Museum",
+      "relevance": "Useful for the industrial transition section.",
+      "linked_claim_keys": [
+        "steamship-reliability"
+      ],
+      "linked_pages": [
+        "images",
+        "timeline"
+      ]
+    }
+  ],
+  "open_questions": [
+    {
+      "question": "How different was East Asian steamship adoption timing from Europe?",
+      "priority": "medium",
+      "related_claim_keys": [
+        "steamship-reliability"
+      ]
+    }
+  ]
+}
