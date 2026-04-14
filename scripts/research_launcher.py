@@ -6,6 +6,8 @@ import json
 from pathlib import Path
 from typing import Any, Optional
 
+import research_discovery as rd
+import research_query_planner as qp
 import research_vault as rv
 
 
@@ -49,12 +51,27 @@ def main() -> None:
             query=args.query,
             run_id=rv._optional_text(args.run_id),
             topic_slug=rv._optional_text(args.topic_slug),
+            entity_slug=rv._optional_text(args.entity_slug),
+            section_slug=rv._optional_text(args.section_slug),
             vault_dir=vault_dir,
             downstream_use=args.downstream_use,
             must_answer=args.must_answer,
             excluded_scope=args.exclude,
             notes=args.notes,
             custom_assignments=args.assignment,
+            run_discovery=args.discover,
+            max_per_lane=args.max_per_lane,
+            expansion_rounds=args.expansion_rounds,
+        )
+    elif args.command == "run-discovery":
+        payload = run_discovery_session(
+            topic=args.topic,
+            run_id=args.run_id,
+            topic_slug=rv._optional_text(args.topic_slug),
+            vault_dir=vault_dir,
+            max_per_lane=args.max_per_lane,
+            expansion_rounds=args.expansion_rounds,
+            refresh_plan=args.refresh_plan,
         )
     elif args.command == "ingest-bundle":
         payload = ingest_bundle(
@@ -100,11 +117,26 @@ def build_parser() -> argparse.ArgumentParser:
     _add_topic_args(prepare_parser)
     prepare_parser.add_argument("--query", required=True, help="Primary research query for the run")
     prepare_parser.add_argument("--run-id", default="", help="Optional explicit run id")
+    prepare_parser.add_argument("--entity-slug", default="", help="Optional canonical entity slug for raw run storage")
+    prepare_parser.add_argument("--section-slug", default="", help="Optional section slug recorded in run metadata")
     prepare_parser.add_argument("--downstream-use", default="", help="How the topic will be used later")
     prepare_parser.add_argument("--must-answer", action="append", default=[], help="Question that must be answered; repeatable")
     prepare_parser.add_argument("--exclude", action="append", default=[], help="Scope exclusion; repeatable")
     prepare_parser.add_argument("--assignment", action="append", default=[], help="Custom assignment: role|axis|focus")
     prepare_parser.add_argument("--notes", default="", help="Optional operator note stored in the run manifest")
+    prepare_parser.add_argument("--discover", action="store_true", help="Run lane-based discovery immediately after preparing the session bundle")
+    prepare_parser.add_argument("--max-per-lane", type=int, default=5, help="Maximum discovery candidates kept per lane")
+    prepare_parser.add_argument("--expansion-rounds", type=int, default=0, help="Optional discovery expansion rounds to run after the seed pass")
+
+    discovery_parser = subparsers.add_parser(
+        "run-discovery",
+        help="Load a prepared session bundle, refresh the research plan if requested, and write lane-based discovery outputs.",
+    )
+    _add_topic_args(discovery_parser)
+    discovery_parser.add_argument("--run-id", required=True)
+    discovery_parser.add_argument("--max-per-lane", type=int, default=5, help="Maximum discovery candidates kept per lane")
+    discovery_parser.add_argument("--expansion-rounds", type=int, default=0, help="Optional discovery expansion rounds to run after the seed pass")
+    discovery_parser.add_argument("--refresh-plan", action="store_true", help="Rebuild research_plan.json from the current session metadata before discovery")
 
     ingest_parser = subparsers.add_parser(
         "ingest-bundle",
@@ -139,12 +171,17 @@ def prepare_session(
     query: str,
     run_id: Optional[str],
     topic_slug: Optional[str],
+    entity_slug: Optional[str],
+    section_slug: Optional[str],
     vault_dir: Optional[Path],
     downstream_use: str,
     must_answer: list[str],
     excluded_scope: list[str],
     notes: str,
     custom_assignments: list[str],
+    run_discovery: bool = False,
+    max_per_lane: int = 5,
+    expansion_rounds: int = 0,
 ) -> dict[str, Any]:
     assignments = _assignments_payload(custom_assignments)
     planned_agents = [assignment["role"] for assignment in assignments] + ["cross-verifier"]
@@ -157,10 +194,12 @@ def prepare_session(
         planned_agents=planned_agents,
         notes=notes,
         topic_slug=topic_slug,
+        entity_slug=entity_slug,
+        section_slug=section_slug,
         vault_dir=vault_dir,
     )
     effective_run_id = run_payload["run_id"]
-    paths = rv.resolve_topic_paths(topic, topic_slug=topic_slug, vault_dir=vault_dir)
+    paths = rv.resolve_topic_paths(topic, topic_slug=topic_slug, entity_slug=entity_slug, vault_dir=vault_dir)
     run_dir = Path(run_payload["run_dir"])
 
     refinement_note = _render_refinement_note(
@@ -178,6 +217,7 @@ def prepare_session(
         notes=refinement_note,
         mark_complete=True,
         topic_slug=topic_slug,
+        entity_slug=entity_slug,
         vault_dir=vault_dir,
     )
     planning_state = rv.set_run_stage(
@@ -187,6 +227,7 @@ def prepare_session(
         status="active",
         notes="Prompt bundle generated and ready for packet-based parallel collection.",
         topic_slug=topic_slug,
+        entity_slug=entity_slug,
         vault_dir=vault_dir,
     )
 
@@ -200,12 +241,17 @@ def prepare_session(
     session_plan = {
         "topic": paths.topic,
         "topic_slug": paths.topic_slug,
+        "entity_slug": str(entity_slug or paths.raw_slug).strip(),
+        "section_slug": str(section_slug or "").strip(),
+        "raw_slug": paths.raw_slug,
         "run_id": effective_run_id,
         "query": query.strip(),
         "downstream_use": downstream_use.strip(),
         "must_answer": rv._clean_list(must_answer),
         "excluded_scope": rv._clean_list(excluded_scope),
         "notes": notes.strip(),
+        "research_plan_path": "",
+        "discovery": {},
         "assignments": [],
         "verifier": {},
     }
@@ -274,17 +320,33 @@ def prepare_session(
         "packet_target_path": str(verifier_packet_path),
     }
 
-    planner_json_path.write_text(json.dumps(session_plan, ensure_ascii=False, indent=2), encoding="utf-8")
-    planner_path.write_text(_render_session_brief(session_plan), encoding="utf-8")
-    main_agent_path.write_text(
-        _render_main_agent_bundle(
-            topic=paths.topic,
-            query=query,
-            run_id=effective_run_id,
-            bundle_dir=bundle_dir,
-            plan=session_plan,
-        ),
-        encoding="utf-8",
+    research_plan = _build_session_research_plan(
+        topic=paths.topic,
+        query=query,
+        downstream_use=downstream_use,
+        must_answer=must_answer,
+        excluded_scope=excluded_scope,
+        paths=paths,
+    )
+    research_plan_path = bundle_dir / "research_plan.json"
+    research_plan_path.write_text(json.dumps(research_plan, ensure_ascii=False, indent=2), encoding="utf-8")
+    session_plan["research_plan_path"] = str(research_plan_path)
+    if run_discovery:
+        session_plan["discovery"] = rd.write_discovery_outputs(
+            research_plan,
+            bundle_dir / "discovery",
+            max_per_lane=max_per_lane,
+            expansion_rounds=expansion_rounds,
+        )
+    _write_session_bundle_files(
+        topic=paths.topic,
+        query=query,
+        run_id=effective_run_id,
+        bundle_dir=bundle_dir,
+        planner_path=planner_path,
+        planner_json_path=planner_json_path,
+        main_agent_path=main_agent_path,
+        session_plan=session_plan,
     )
 
     rv._append_log_entry(
@@ -293,13 +355,21 @@ def prepare_session(
         bullets=[
             f"bundle_dir: `{rv._relative_to_root(bundle_dir, paths.research_root)}`",
             f"subagent_count: `{len(assignments)}`",
+            f"research_plan: `{rv._relative_to_root(research_plan_path, paths.research_root)}`",
             f"verifier_prompt: `{rv._relative_to_root(verifier_prompt_path, paths.research_root)}`",
-        ],
+        ] + (
+            [f"discovery_summary: `{rv._relative_to_root(Path(session_plan['discovery']['discovery_summary']), paths.research_root)}`"]
+            if session_plan["discovery"]
+            else []
+        ),
     )
 
     return {
         "topic": paths.topic,
         "topic_slug": paths.topic_slug,
+        "entity_slug": str(entity_slug or paths.raw_slug).strip(),
+        "section_slug": str(section_slug or "").strip(),
+        "raw_slug": paths.raw_slug,
         "run_id": effective_run_id,
         "stage": planning_state["stage"],
         "status": planning_state["status"],
@@ -307,8 +377,67 @@ def prepare_session(
         "main_agent_path": str(main_agent_path),
         "session_brief_path": str(planner_path),
         "session_plan_path": str(planner_json_path),
+        "research_plan_path": str(research_plan_path),
+        "discovery": session_plan["discovery"],
         "assignments": session_plan["assignments"],
         "verifier": session_plan["verifier"],
+    }
+
+
+def run_discovery_session(
+    *,
+    topic: str,
+    run_id: str,
+    topic_slug: Optional[str],
+    vault_dir: Optional[Path],
+    max_per_lane: int,
+    expansion_rounds: int,
+    refresh_plan: bool,
+) -> dict[str, Any]:
+    paths = rv.resolve_topic_paths(topic, topic_slug=topic_slug, vault_dir=vault_dir)
+    bundle_dir = _bundle_dir(paths, run_id)
+    session_plan = _load_session_plan(bundle_dir)
+    research_plan_path = Path(session_plan.get("research_plan_path") or bundle_dir / "research_plan.json")
+    if refresh_plan or not research_plan_path.exists():
+        research_plan = _build_session_research_plan(
+            topic=paths.topic,
+            query=str(session_plan.get("query") or "").strip(),
+            downstream_use=str(session_plan.get("downstream_use") or "").strip(),
+            must_answer=rv._clean_list(session_plan.get("must_answer") or []),
+            excluded_scope=rv._clean_list(session_plan.get("excluded_scope") or []),
+            paths=paths,
+        )
+        research_plan_path.write_text(json.dumps(research_plan, ensure_ascii=False, indent=2), encoding="utf-8")
+        session_plan["research_plan_path"] = str(research_plan_path)
+    else:
+        research_plan = json.loads(research_plan_path.read_text(encoding="utf-8"))
+
+    discovery_outputs = rd.write_discovery_outputs(
+        research_plan,
+        bundle_dir / "discovery",
+        max_per_lane=max_per_lane,
+        expansion_rounds=expansion_rounds,
+    )
+    session_plan["discovery"] = discovery_outputs
+    _write_session_bundle_files(
+        topic=paths.topic,
+        query=str(session_plan.get("query") or "").strip(),
+        run_id=run_id,
+        bundle_dir=bundle_dir,
+        planner_path=bundle_dir / "session_brief.md",
+        planner_json_path=bundle_dir / "session_plan.json",
+        main_agent_path=bundle_dir / "main_agent.md",
+        session_plan=session_plan,
+    )
+    summary = json.loads(Path(discovery_outputs["discovery_summary"]).read_text(encoding="utf-8"))
+    return {
+        "topic": paths.topic,
+        "topic_slug": paths.topic_slug,
+        "run_id": run_id,
+        "bundle_dir": str(bundle_dir),
+        "research_plan_path": str(research_plan_path),
+        "discovery": discovery_outputs,
+        "summary": summary.get("summary") or {},
     }
 
 
@@ -503,6 +632,11 @@ def session_status(
     verifier_ready = bool(verifier_status) and verifier_status.get("ready_to_ingest", False)
     verifier_ingested = bool(verifier_status) and verifier_status.get("already_ingested", False)
     verifier_ready_uningested = bool(verifier_status) and verifier_ready and not verifier_ingested
+    discovery = plan.get("discovery") or {}
+    discovery_summary_path = str(discovery.get("discovery_summary") or "").strip()
+    discovery_summary = {}
+    if discovery_summary_path and Path(discovery_summary_path).exists():
+        discovery_summary = json.loads(Path(discovery_summary_path).read_text(encoding="utf-8"))
 
     if str(run_state.get("stage") or "") == "packaging" and str(run_state.get("status") or "") == "completed":
         recommended_next_step = "complete"
@@ -537,6 +671,13 @@ def session_status(
         "specialist_readiness": specialist_snapshot.get("specialist_readiness") or "seed_only",
         "specialist_report_path": specialist_snapshot.get("specialist_report_path") or "",
         "executive_summary_path": specialist_snapshot.get("executive_summary_path") or "",
+        "research_plan_path": str(plan.get("research_plan_path") or ""),
+        "discovery": {
+            "discovery_summary_path": discovery_summary_path,
+            "candidate_count": int((discovery_summary.get("summary") or {}).get("candidate_count") or 0),
+            "packet_count": int((discovery_summary.get("summary") or {}).get("packet_count") or 0),
+            "query_expansion_count": int((discovery_summary.get("summary") or {}).get("query_expansion_count") or 0),
+        },
         "recommended_next_step": recommended_next_step,
     }
 
@@ -627,6 +768,15 @@ def _render_session_brief(plan: dict[str, Any]) -> str:
         lines.extend(f"- {item}" for item in plan["excluded_scope"])
     else:
         lines.append("- none recorded")
+    lines.extend(["", "## Discovery Assets"])
+    lines.append(f"- research_plan_path: `{plan.get('research_plan_path') or 'n/a'}`")
+    discovery = plan.get("discovery") or {}
+    if discovery:
+        lines.append(f"- discovery_candidates: `{discovery.get('discovery_candidates') or 'n/a'}`")
+        lines.append(f"- discovery_summary: `{discovery.get('discovery_summary') or 'n/a'}`")
+        lines.append(f"- query_expansions: `{discovery.get('query_expansions') or 'n/a'}`")
+    else:
+        lines.append("- discovery outputs not generated yet")
     lines.extend(["", "## Planned Assignments"])
     for assignment in plan["assignments"]:
         lines.extend(
@@ -667,13 +817,18 @@ def _render_main_agent_bundle(
         "",
         "## Execution Order",
         "1. Read `session_brief.md`.",
-        "2. Dispatch one subagent per assignment using the prompt files below.",
-        "3. Save each returned JSON packet to its matching packet target path.",
-        "4. Check `research_launcher.py status-session` to see what is still missing.",
-        "5. Run `research_launcher.py ingest-bundle` after explorer packets are ready.",
-        "6. Run the cross-verifier prompt after the first collection pass.",
-        "7. Save the verifier packet and run `research_launcher.py ingest-bundle` again.",
-        "8. Run `research_launcher.py finalize-session`.",
+        "2. Inspect `research_plan.json` and any discovery outputs before dispatching subagents.",
+        "3. Dispatch one subagent per assignment using the prompt files below.",
+        "4. Save each returned JSON packet to its matching packet target path.",
+        "5. Check `research_launcher.py status-session` to see what is still missing.",
+        "6. Run `research_launcher.py ingest-bundle` after explorer packets are ready.",
+        "7. Run the cross-verifier prompt after the first collection pass.",
+        "8. Save the verifier packet and run `research_launcher.py ingest-bundle` again.",
+        "9. Run `research_launcher.py finalize-session`.",
+        "",
+        "## Discovery",
+        f"- research_plan: `{plan.get('research_plan_path') or 'n/a'}`",
+        f"- discovery_summary: `{(plan.get('discovery') or {}).get('discovery_summary') or 'n/a'}`",
         "",
         "## Subagent Prompts",
     ]
@@ -770,6 +925,51 @@ def _render_verifier_prompt(
 def _read_template(name: str) -> str:
     template_path = Path(__file__).resolve().parents[1] / "templates" / name
     return template_path.read_text(encoding="utf-8").strip()
+
+
+def _build_session_research_plan(
+    *,
+    topic: str,
+    query: str,
+    downstream_use: str,
+    must_answer: list[str],
+    excluded_scope: list[str],
+    paths: rv.ResearchTopicPaths,
+) -> dict[str, Any]:
+    existing_sources = rv._load_jsonl(paths.manifests_dir / "sources.jsonl")
+    return qp.build_research_plan(
+        topic=topic,
+        query=query,
+        downstream_use=downstream_use,
+        must_answer=rv._clean_list(must_answer),
+        excluded_scope=rv._clean_list(excluded_scope),
+        existing_sources=existing_sources,
+    )
+
+
+def _write_session_bundle_files(
+    *,
+    topic: str,
+    query: str,
+    run_id: str,
+    bundle_dir: Path,
+    planner_path: Path,
+    planner_json_path: Path,
+    main_agent_path: Path,
+    session_plan: dict[str, Any],
+) -> None:
+    planner_json_path.write_text(json.dumps(session_plan, ensure_ascii=False, indent=2), encoding="utf-8")
+    planner_path.write_text(_render_session_brief(session_plan), encoding="utf-8")
+    main_agent_path.write_text(
+        _render_main_agent_bundle(
+            topic=topic,
+            query=query,
+            run_id=run_id,
+            bundle_dir=bundle_dir,
+            plan=session_plan,
+        ),
+        encoding="utf-8",
+    )
 
 
 def _bundle_dir(paths: rv.ResearchTopicPaths, run_id: str) -> Path:

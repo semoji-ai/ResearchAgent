@@ -21,6 +21,7 @@ class ResearchTopicPaths:
     research_root: Path
     topic: str
     topic_slug: str
+    raw_slug: str
     raw_topic_dir: Path
     manifests_dir: Path
     wiki_dir: Path
@@ -79,6 +80,8 @@ def main() -> None:
             planned_agents=args.agent,
             notes=args.notes,
             topic_slug=_optional_text(args.topic_slug),
+            entity_slug=_optional_text(args.entity_slug),
+            section_slug=_optional_text(args.section_slug),
             vault_dir=vault_dir,
         )
     elif args.command == "set-run-stage":
@@ -110,6 +113,19 @@ def main() -> None:
             summary=args.summary,
             key_points=args.key_point,
             tags=args.tag,
+            source_class=args.source_class,
+            trust_tier=args.trust_tier,
+            trust_score=args.trust_score,
+            domain=args.domain,
+            tier_reason=args.tier_reason,
+            publisher_resolved=args.publisher_resolved,
+            lane_id=args.lane_id,
+            discovery_confidence=args.discovery_confidence,
+            discovered_via_query=args.discovered_via_query,
+            discovery_stage=args.discovery_stage,
+            relevance_score=args.relevance_score,
+            relevance_band=args.relevance_band,
+            ranking_score=args.ranking_score,
             topic_slug=_optional_text(args.topic_slug),
             vault_dir=vault_dir,
         )
@@ -206,6 +222,8 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser = subparsers.add_parser("start-run", help="Create a raw run scaffold")
     _add_topic_args(run_parser)
     run_parser.add_argument("--run-id", default="", help="Optional explicit run id")
+    run_parser.add_argument("--entity-slug", default="", help="Optional canonical entity slug for raw run storage")
+    run_parser.add_argument("--section-slug", default="", help="Optional section slug recorded in run metadata")
     run_parser.add_argument("--query", default="", help="Search or planning query for the run")
     run_parser.add_argument("--focus", action="append", default=[], help="Optional focus item; repeatable")
     run_parser.add_argument("--agent", action="append", default=[], help="Optional planned agent label; repeatable")
@@ -235,6 +253,19 @@ def build_parser() -> argparse.ArgumentParser:
     source_parser.add_argument("--summary", default="")
     source_parser.add_argument("--key-point", action="append", default=[], help="Key point; repeatable")
     source_parser.add_argument("--tag", action="append", default=[], help="Optional tag; repeatable")
+    source_parser.add_argument("--source-class", default="", help="Optional source classification such as academic or institutional")
+    source_parser.add_argument("--trust-tier", default="", help="Optional trust tier such as highest, high, medium, or low")
+    source_parser.add_argument("--trust-score", default="", help="Optional numeric trust score")
+    source_parser.add_argument("--domain", default="", help="Optional normalized domain")
+    source_parser.add_argument("--tier-reason", default="", help="Optional trust classification rationale")
+    source_parser.add_argument("--publisher-resolved", default="", help="Optional resolved publisher/domain label")
+    source_parser.add_argument("--lane-id", default="", help="Optional discovery lane identifier")
+    source_parser.add_argument("--discovery-confidence", default="", help="Optional discovery confidence such as high, medium, or blocked")
+    source_parser.add_argument("--discovered-via-query", default="", help="Optional query that discovered the source")
+    source_parser.add_argument("--discovery-stage", default="", help="Optional discovery stage such as seed or expansion")
+    source_parser.add_argument("--relevance-score", default="", help="Optional discovery relevance score")
+    source_parser.add_argument("--relevance-band", default="", help="Optional relevance band such as low, medium, or high")
+    source_parser.add_argument("--ranking-score", default="", help="Optional final discovery ranking score")
     source_parser.add_argument("--body", default="", help="Inline markdown body")
     source_parser.add_argument("--body-file", default="", help="Markdown body file")
 
@@ -328,18 +359,21 @@ def resolve_topic_paths(
     topic: str,
     *,
     topic_slug: Optional[str] = None,
+    entity_slug: Optional[str] = None,
     vault_dir: Optional[Path] = None,
 ) -> ResearchTopicPaths:
     normalized_topic = str(topic).strip()
     if not normalized_topic:
         raise ValueError("`topic` is required.")
     slug = str(topic_slug).strip() if topic_slug else _safe_slug(normalized_topic)
+    raw_slug = str(entity_slug).strip() if entity_slug else slug
     root = research_root(vault_dir=vault_dir)
     return ResearchTopicPaths(
         research_root=root,
         topic=normalized_topic,
         topic_slug=slug,
-        raw_topic_dir=root / "raw" / slug,
+        raw_slug=raw_slug,
+        raw_topic_dir=root / "raw" / raw_slug,
         manifests_dir=root / "manifests" / slug,
         wiki_dir=root / "wiki" / slug,
         topic_snapshot_path=root / "topics" / f"{slug}.md",
@@ -455,10 +489,12 @@ def start_research_run(
     planned_agents: Optional[List[str]] = None,
     notes: str = "",
     topic_slug: Optional[str] = None,
+    entity_slug: Optional[str] = None,
+    section_slug: Optional[str] = None,
     vault_dir: Optional[Path] = None,
 ) -> dict[str, str]:
     ensure_research_topic(topic, topic_slug=topic_slug, vault_dir=vault_dir)
-    paths = resolve_topic_paths(topic, topic_slug=topic_slug, vault_dir=vault_dir)
+    paths = resolve_topic_paths(topic, topic_slug=topic_slug, entity_slug=entity_slug, vault_dir=vault_dir)
     effective_run_id = str(run_id or _timestamp_id()).strip()
     run_dir = paths.raw_topic_dir / effective_run_id
     (run_dir / "source_notes").mkdir(parents=True, exist_ok=True)
@@ -470,6 +506,9 @@ def start_research_run(
         "run_id": effective_run_id,
         "topic": paths.topic,
         "topic_slug": paths.topic_slug,
+        "entity_slug": str(entity_slug or paths.raw_slug).strip(),
+        "section_slug": str(section_slug or "").strip(),
+        "raw_slug": paths.raw_slug,
         "query": query.strip(),
         "focus": _clean_list(focus),
         "planned_agents": _clean_list(planned_agents),
@@ -516,9 +555,10 @@ def set_run_stage(
     notes: str = "",
     mark_complete: bool = False,
     topic_slug: Optional[str] = None,
+    entity_slug: Optional[str] = None,
     vault_dir: Optional[Path] = None,
 ) -> dict[str, Any]:
-    paths = resolve_topic_paths(topic, topic_slug=topic_slug, vault_dir=vault_dir)
+    paths = resolve_topic_paths(topic, topic_slug=topic_slug, entity_slug=entity_slug, vault_dir=vault_dir)
     run_dir = _existing_run_dir(paths, run_id)
     state_path = run_dir / "state.json"
     if state_path.exists():
@@ -583,6 +623,19 @@ def register_source_note(
     summary: str = "",
     key_points: Optional[List[str]] = None,
     tags: Optional[List[str]] = None,
+    source_class: str = "",
+    trust_tier: str = "",
+    trust_score: str = "",
+    domain: str = "",
+    tier_reason: str = "",
+    publisher_resolved: str = "",
+    lane_id: str = "",
+    discovery_confidence: str = "",
+    discovered_via_query: str = "",
+    discovery_stage: str = "",
+    relevance_score: str = "",
+    relevance_band: str = "",
+    ranking_score: str = "",
     topic_slug: Optional[str] = None,
     vault_dir: Optional[Path] = None,
 ) -> dict[str, str]:
@@ -607,6 +660,19 @@ def register_source_note(
         "summary": summary.strip(),
         "key_points": _clean_list(key_points),
         "tags": sorted(set(_clean_list(tags) + ["raw-source"])),
+        "source_class": source_class.strip(),
+        "trust_tier": trust_tier.strip(),
+        "trust_score": str(trust_score).strip(),
+        "domain": domain.strip(),
+        "tier_reason": tier_reason.strip(),
+        "publisher_resolved": publisher_resolved.strip(),
+        "lane_id": lane_id.strip(),
+        "discovery_confidence": discovery_confidence.strip(),
+        "discovered_via_query": discovered_via_query.strip(),
+        "discovery_stage": discovery_stage.strip(),
+        "relevance_score": str(relevance_score).strip(),
+        "relevance_band": relevance_band.strip(),
+        "ranking_score": str(ranking_score).strip(),
         "note_path": _relative_to_root(note_path, paths.research_root),
     }
     note_path.write_text(_source_note_markdown(record, note_markdown=note_markdown), encoding="utf-8")
@@ -619,6 +685,8 @@ def register_source_note(
             f"source_id: `{effective_source_id}`",
             f"source_kind: `{record['source_kind']}`",
             f"quality_grade: `{record['quality_grade'] or 'n/a'}`",
+            f"source_class: `{record['source_class'] or 'n/a'}`",
+            f"trust_tier: `{record['trust_tier'] or 'n/a'}`",
             f"url: {record['source_url']}",
         ],
     )
@@ -785,6 +853,19 @@ def ingest_packet(
             summary=str(source.get("summary") or "").strip(),
             key_points=_clean_list(source.get("key_points") or []),
             tags=_clean_list(source.get("tags") or []),
+            source_class=str(source.get("source_class") or "").strip(),
+            trust_tier=str(source.get("trust_tier") or "").strip(),
+            trust_score=str(source.get("trust_score") or "").strip(),
+            domain=str(source.get("domain") or "").strip(),
+            tier_reason=str(source.get("tier_reason") or "").strip(),
+            publisher_resolved=str(source.get("publisher_resolved") or "").strip(),
+            lane_id=str(source.get("lane_id") or "").strip(),
+            discovery_confidence=str(source.get("discovery_confidence") or source.get("confidence") or "").strip(),
+            discovered_via_query=str(source.get("discovered_via_query") or source.get("query") or "").strip(),
+            discovery_stage=str(source.get("discovery_stage") or "").strip(),
+            relevance_score=str(source.get("relevance_score") or "").strip(),
+            relevance_band=str(source.get("relevance_band") or "").strip(),
+            ranking_score=str(source.get("ranking_score") or "").strip(),
             topic_slug=topic_slug,
             vault_dir=vault_dir,
         )
@@ -1232,8 +1313,10 @@ def lint_research_topic(
     latest_run_path = paths.manifests_dir / "latest_run.txt"
     if latest_run_path.exists():
         latest_run_id = latest_run_path.read_text(encoding="utf-8").strip()
-        if latest_run_id and not (paths.raw_topic_dir / latest_run_id).exists():
-            issues.append(_issue("error", f"latest_run.txt points to missing run directory `{latest_run_id}`."))
+        if latest_run_id:
+            candidate_dirs = _candidate_raw_dirs(paths, latest_run_id)
+            if not any(path.exists() for path in candidate_dirs):
+                issues.append(_issue("error", f"latest_run.txt points to missing run directory `{latest_run_id}`."))
         elif latest_run_id:
             latest_run_state = _load_run_state(paths, latest_run_id)
             if latest_run_state:
@@ -1258,6 +1341,7 @@ def _paths_payload(paths: ResearchTopicPaths) -> dict[str, str]:
         "research_root": str(paths.research_root),
         "topic": paths.topic,
         "topic_slug": paths.topic_slug,
+        "raw_slug": paths.raw_slug,
         "raw_topic_dir": str(paths.raw_topic_dir),
         "manifests_dir": str(paths.manifests_dir),
         "wiki_dir": str(paths.wiki_dir),
@@ -1285,6 +1369,19 @@ def _source_note_markdown(record: dict[str, Any], *, note_markdown: str) -> str:
                     "language": record["language"],
                     "license": record["license"],
                     "quality_grade": record["quality_grade"],
+                    "source_class": record["source_class"],
+                    "trust_tier": record["trust_tier"],
+                    "trust_score": record["trust_score"],
+                    "domain": record["domain"],
+                    "tier_reason": record["tier_reason"],
+                    "publisher_resolved": record["publisher_resolved"],
+                    "lane_id": record["lane_id"],
+                    "discovery_confidence": record["discovery_confidence"],
+                    "discovered_via_query": record["discovered_via_query"],
+                    "discovery_stage": record["discovery_stage"],
+                    "relevance_score": record["relevance_score"],
+                    "relevance_band": record["relevance_band"],
+                    "ranking_score": record["ranking_score"],
                     "tags": record["tags"],
                 }
             ),
@@ -1299,6 +1396,21 @@ def _source_note_markdown(record: dict[str, Any], *, note_markdown: str) -> str:
             "",
             "## Key Points",
             *[f"- {item}" for item in (record["key_points"] or ["none recorded"])],
+            "",
+            "## Discovery Metadata",
+            f"- source_class: `{record['source_class'] or 'n/a'}`",
+            f"- trust_tier: `{record['trust_tier'] or 'n/a'}`",
+            f"- trust_score: `{record['trust_score'] or 'n/a'}`",
+            f"- domain: `{record['domain'] or 'n/a'}`",
+            f"- tier_reason: {record['tier_reason'] or 'n/a'}",
+            f"- publisher_resolved: `{record['publisher_resolved'] or 'n/a'}`",
+            f"- lane_id: `{record['lane_id'] or 'n/a'}`",
+            f"- discovery_confidence: `{record['discovery_confidence'] or 'n/a'}`",
+            f"- discovered_via_query: {record['discovered_via_query'] or 'n/a'}",
+            f"- discovery_stage: `{record['discovery_stage'] or 'n/a'}`",
+            f"- relevance_score: `{record['relevance_score'] or 'n/a'}`",
+            f"- relevance_band: `{record['relevance_band'] or 'n/a'}`",
+            f"- ranking_score: `{record['ranking_score'] or 'n/a'}`",
             "",
             "## Raw Notes",
             note_markdown.strip() or "_No raw note body captured._",
@@ -2001,7 +2113,10 @@ def _markdown_body(path: Path) -> str:
 
 
 def _load_run_state(paths: ResearchTopicPaths, run_id: str) -> dict[str, Any]:
-    run_dir = paths.raw_topic_dir / str(run_id).strip()
+    try:
+        run_dir = _existing_run_dir(paths, run_id)
+    except FileNotFoundError:
+        return {}
     state_path = run_dir / "state.json"
     if not state_path.exists():
         return {}
@@ -2021,14 +2136,38 @@ def _latest_run_record(paths: ResearchTopicPaths, runs: list[dict[str, Any]]) ->
     return runs[-1] if runs else {}
 
 
+def _slug_variants(value: str) -> list[str]:
+    text = str(value).strip()
+    if not text:
+        return []
+    variants: list[str] = []
+    for candidate in [text, text.replace("-", "_"), text.replace("_", "-")]:
+        if candidate and candidate not in variants:
+            variants.append(candidate)
+    return variants
+
+
+def _candidate_raw_dirs(paths: ResearchTopicPaths, run_id: str) -> list[Path]:
+    candidates: list[Path] = []
+    seen: set[str] = set()
+    for slug in _slug_variants(paths.raw_slug) + _slug_variants(paths.topic_slug):
+        candidate = paths.research_root / "raw" / slug / run_id
+        key = str(candidate)
+        if key in seen:
+            continue
+        seen.add(key)
+        candidates.append(candidate)
+    return candidates
+
+
 def _existing_run_dir(paths: ResearchTopicPaths, run_id: str) -> Path:
     normalized_run_id = str(run_id).strip()
     if not normalized_run_id:
         raise ValueError("`run_id` is required.")
-    run_dir = paths.raw_topic_dir / normalized_run_id
-    if not run_dir.exists():
-        raise FileNotFoundError(f"Run directory not found: {run_dir}")
-    return run_dir
+    for run_dir in _candidate_raw_dirs(paths, normalized_run_id):
+        if run_dir.exists():
+            return run_dir
+    raise FileNotFoundError(f"Run directory not found for slugs raw={paths.raw_slug}, topic={paths.topic_slug}, run_id={normalized_run_id}")
 
 
 def _timestamp_id() -> str:

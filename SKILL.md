@@ -39,6 +39,7 @@ Read these references when needed:
 - [references/storage-schema.md](references/storage-schema.md)
 - [references/workflow.md](references/workflow.md)
 - [references/methodology-adaptation.md](references/methodology-adaptation.md)
+- [references/search-tools.md](references/search-tools.md)
 - [references/agent-roles.md](references/agent-roles.md)
 - [references/parallel-packets.md](references/parallel-packets.md)
 - [references/promotion-rules.md](references/promotion-rules.md)

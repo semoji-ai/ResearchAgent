@@ -44,6 +44,7 @@ def main() -> None:
             "web-explorer|baseline smoke evidence|Collect one strong baseline web packet for the smoke flow.",
         )
         packet_path = Path(prepare_payload["assignments"][0]["packet_target_path"])
+        research_plan_path = Path(prepare_payload["research_plan_path"])
         packet = json.loads(packet_path.read_text(encoding="utf-8"))
         packet.update(
             {
@@ -201,6 +202,8 @@ def main() -> None:
 
         if not lint_payload.get("valid"):
             raise SystemExit(f"Smoke test failed lint: {json.dumps(lint_payload, ensure_ascii=False)}")
+        if not research_plan_path.exists():
+            raise SystemExit(f"Smoke test failed: research plan missing at {research_plan_path}")
         if not persisted_asset_path.exists():
             raise SystemExit(f"Smoke test failed: persisted image asset missing at {persisted_asset_path}")
         if specialist_report.get("readiness") not in {"usable", "strong"}:
@@ -213,6 +216,7 @@ def main() -> None:
             "research_root": root.as_posix(),
             "run_id": prepare_payload["run_id"],
             "planning_stage": prepare_payload["stage"],
+            "research_plan_path": prepare_payload["research_plan_path"],
             "status_before": status_before["recommended_next_step"],
             "explorer_packet_id": packet_payload["ingested_packets"][0]["packet_id"],
             "verifier_packet_id": verifier_ingest["ingested_packets"][0]["packet_id"],

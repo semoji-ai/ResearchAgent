@@ -71,6 +71,10 @@ Each refreshed topic also emits downstream-facing quality artifacts:
 - initialize a topic scaffold
 - start a resumable research run
 - prepare a full session bundle with subagent prompts and packet targets
+- generate a lane-based `research_plan.json` for discovery and delegation
+- discover source candidates through RSS and public APIs such as Crossref, OpenLibrary, Google Books, Google News RSS, Korean news RSS, Wikipedia, and DuckDuckGo HTML search
+- expose standalone lane CLIs for Wikipedia, news RSS, and academic/books search
+- expose the same lane tools through an optional MCP server
 - update run stage and status
 - register source notes and image notes
 - persist image files when a direct asset URL or local asset file is available
@@ -107,9 +111,27 @@ This creates:
 
 - a run in `raw/<topic_slug>/<run_id>/`
 - `artifacts/session_bundle/session_brief.md`
+- `artifacts/session_bundle/research_plan.json`
 - one subagent prompt per research axis
 - packet target files for each subagent
 - a cross-verifier prompt and packet target
+
+If you also want the standalone runtime to pre-seed candidate sources from lane-based discovery:
+
+```bash
+python3 scripts/research_launcher.py prepare-session \
+  --topic "History of Steamships" \
+  --root-dir "$HOME/research-wiki" \
+  --query "steamship history chronology and adoption" \
+  --discover \
+  --expansion-rounds 1
+```
+
+This additionally writes:
+
+- `artifacts/session_bundle/discovery/discovered_source_candidates.jsonl`
+- `artifacts/session_bundle/discovery/source_note_seeds.jsonl`
+- `artifacts/session_bundle/discovery/discovery_summary.json`
 
 Check session progress:
 
@@ -143,7 +165,43 @@ python3 scripts/research_launcher.py finalize-session \
 
 If you need low-level manual control, `scripts/research_vault.py` still exposes `init-topic`, `start-run`, `set-run-stage`, `ingest-packet`, `append-claim`, `append-question`, `refresh-topic`, and `lint-topic`.
 
+You can rerun only the discovery layer for an existing session bundle with:
+
+```bash
+python3 scripts/research_launcher.py run-discovery \
+  --topic "History of Steamships" \
+  --root-dir "$HOME/research-wiki" \
+  --run-id "<run_id>" \
+  --refresh-plan \
+  --expansion-rounds 1
+```
+
 `finalize-session` now blocks packaging when the topic is still `seed_only`, even if storage lint passes. This keeps downstream writing agents from treating a thin research pass as ready.
+
+## Lane Tools
+
+Standalone lane tools are available when you want the `auto_kairos_v3` style interface without running the full session workflow:
+
+```bash
+python3 scripts/wikipedia_lane.py "Steam engine" --limit 5 --content
+python3 scripts/news_rss_lane.py "steamship" --limit 10 --en-only
+python3 scripts/crossref_lane.py "steamship adoption" --papers-only
+```
+
+These share the same search heuristics as the discovery runtime:
+
+- Wikipedia supports optional full-content fetch through Jina Reader
+- news RSS returns `confidence` and filters blocked domains such as blogs and social media
+- news RSS dedupes near-identical titles
+- academic search supports `--papers-only` and `--books-only`
+
+If you want MCP exposure similar to `auto_kairos_v3`, run:
+
+```bash
+python3 scripts/mcp_lane_server.py
+```
+
+See [references/search-tools.md](references/search-tools.md) for the lane-first search policy and recommended collection caps.
 
 ## Packet Merge Model
 
