@@ -43,6 +43,10 @@ def main() -> None:
         parser.print_help()
         return
 
+    import unicodedata
+    if hasattr(args, "topic") and args.topic:
+        args.topic = unicodedata.normalize("NFC", args.topic)
+
     vault_dir = rv._effective_vault_dir(args.vault_dir)
 
     if args.command == "prepare-session":

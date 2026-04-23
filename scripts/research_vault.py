@@ -1908,7 +1908,8 @@ def _resolve_asset_file_path(*, packet_path: Path, raw_value: str) -> str:
 
 
 def _optional_text(value: str) -> Optional[str]:
-    text = str(value).strip()
+    import unicodedata
+    text = unicodedata.normalize("NFC", str(value)).strip()
     return text or None
 
 
@@ -2187,6 +2188,8 @@ def _stable_record_id(prefix: str, *parts: str) -> str:
 
 
 def _safe_slug(value: str) -> str:
+    import unicodedata
+    value = unicodedata.normalize("NFC", value)
     text = re.sub(r"[^0-9A-Za-z가-힣_-]+", "-", value.strip())
     text = re.sub(r"-{2,}", "-", text).strip("-_")
     return text or "untitled"
