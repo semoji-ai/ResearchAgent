@@ -1,122 +1,73 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
-import heroImg from './assets/hero.png'
-import './App.css'
+import React from 'react';
+import { BrowserRouter as Router, Routes, Route, Link } from 'react-router-dom';
+import { ContactsPage } from './pages/ContactsPage';
+import { MeetingsPage } from './pages/MeetingsPage';
+import { RAGPage } from './pages/RAGPage';
+import { MailPage } from './pages/MailPage';
+import { BotPage } from './pages/BotPage';
+import { FinancePage } from './pages/FinancePage';
+import { TaxPage } from './pages/TaxPage';
+import { LayoutDashboard, Users, Calendar, Mail, DollarSign, FileText, MessageSquare, Bot } from 'lucide-react';
+
+const Sidebar = () => (
+  <div className="w-64 bg-gray-900 h-screen text-white p-6 fixed">
+    <h2 className="text-2xl font-bold mb-8 text-blue-400">Kairos ERP</h2>
+    <nav className="space-y-4">
+      <Link to="/" className="flex items-center space-x-3 text-gray-300 hover:text-white hover:bg-gray-800 p-2 rounded-lg">
+        <LayoutDashboard className="h-5 w-5" /> <span>Dashboard</span>
+      </Link>
+      <Link to="/contacts" className="flex items-center space-x-3 text-gray-300 hover:text-white hover:bg-gray-800 p-2 rounded-lg">
+        <Users className="h-5 w-5" /> <span>AI Contacts (OCR)</span>
+      </Link>
+      <Link to="/meetings" className="flex items-center space-x-3 text-gray-300 hover:text-white hover:bg-gray-800 p-2 rounded-lg">
+        <Calendar className="h-5 w-5" /> <span>Meetings Sync</span>
+      </Link>
+      <Link to="/mail" className="flex items-center space-x-3 text-gray-300 hover:text-white hover:bg-gray-800 p-2 rounded-lg">
+        <Mail className="h-5 w-5" /> <span>Mail Assistant</span>
+      </Link>
+      <Link to="/bot" className="flex items-center space-x-3 text-gray-300 hover:text-white hover:bg-gray-800 p-2 rounded-lg">
+        <Bot className="h-5 w-5" /> <span>Slack / Chat Bot</span>
+      </Link>
+      <Link to="/finance" className="flex items-center space-x-3 text-gray-300 hover:text-white hover:bg-gray-800 p-2 rounded-lg">
+        <DollarSign className="h-5 w-5" /> <span>Finance & Sales</span>
+      </Link>
+      <Link to="/tax" className="flex items-center space-x-3 text-gray-300 hover:text-white hover:bg-gray-800 p-2 rounded-lg">
+        <FileText className="h-5 w-5" /> <span>Tax Invoices</span>
+      </Link>
+      <Link to="/rag" className="flex items-center space-x-3 text-gray-300 hover:text-white hover:bg-gray-800 p-2 rounded-lg">
+        <MessageSquare className="h-5 w-5" /> <span>CEO AI Consultant</span>
+      </Link>
+    </nav>
+  </div>
+);
+
+const Dashboard = () => (
+  <div className="p-6">
+    <h1 className="text-2xl font-bold mb-4">Welcome to Kairos ERP</h1>
+    <p className="text-gray-600">Select a module from the sidebar to get started.</p>
+  </div>
+);
 
 function App() {
-  const [count, setCount] = useState(0)
-
   return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
+    <Router>
+      <div className="flex min-h-screen bg-gray-50">
+        <Sidebar />
+        <div className="flex-1 ml-64 p-8">
+          <Routes>
+            <Route path="/" element={<Dashboard />} />
+            <Route path="/contacts" element={<ContactsPage />} />
+            <Route path="/meetings" element={<MeetingsPage />} />
+            <Route path="/mail" element={<MailPage />} />
+            <Route path="/bot" element={<BotPage />} />
+            <Route path="/finance" element={<FinancePage />} />
+            <Route path="/tax" element={<TaxPage />} />
+            <Route path="/rag" element={<RAGPage />} />
+          </Routes>
         </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.tsx</code> and save to test <code>HMR</code>
-          </p>
-        </div>
-        <button
-          type="button"
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
-        </button>
-      </section>
-
-      <div className="ticks"></div>
-
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
-
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
-  )
+      </div>
+    </Router>
+  );
 }
 
-export default App
+export default App;

@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.routers import meetings, contacts, finance, tax, mail_assistant
+from app.routers import meetings, contacts, finance, tax, mail_assistant, bot, rag
 from app.core.config import settings
 
 app = FastAPI(
@@ -24,6 +24,8 @@ app.include_router(contacts.router, prefix=settings.API_V1_STR)
 app.include_router(finance.router, prefix=settings.API_V1_STR)
 app.include_router(tax.router, prefix=settings.API_V1_STR)
 app.include_router(mail_assistant.router, prefix=settings.API_V1_STR)
+app.include_router(bot.router, prefix=settings.API_V1_STR)
+app.include_router(rag.router, prefix=settings.API_V1_STR)
 
 @app.get("/")
 def read_root():
