@@ -1,5 +1,8 @@
+import os
+import json
 from fastapi import APIRouter, UploadFile, File, Form
 from app.core.google_drive import drive_service
+from openai import OpenAI
 import datetime
 
 router = APIRouter(
@@ -29,13 +32,37 @@ async def create_meeting_record(
         mime_type=file.content_type
     )
 
-    # Simulate LLM Parsing
-    parsed_summary = {
-        "client_name": "ABC Corp",
-        "project_id": "PRJ-2023-01",
-        "summary": "Discussed the new ERP rollout schedule. Client requested faster delivery by Q3.",
-        "action_items": ["Send revised quote", "Schedule follow-up on Friday"]
-    }
+    # Real LLM Parsing via OpenAI (if key exists)
+    openai_key = os.getenv("OPENAI_API_KEY")
+    if openai_key:
+        try:
+            client = OpenAI(api_key=openai_key)
+            text_content = file_content.decode('utf-8', errors='ignore')
+            completion = client.chat.completions.create(
+                model="gpt-4o",
+                messages=[
+                    {"role": "system", "content": "You are a meeting assistant. Summarize the meeting audio transcript and return JSON with keys: client_name, project_id, summary, action_items (list of strings)."},
+                    {"role": "user", "content": f"Extract data from this meeting transcript:\n\n{text_content}"}
+                ],
+                response_format={ "type": "json_object" }
+            )
+            parsed_summary = json.loads(completion.choices[0].message.content)
+        except Exception as e:
+            print(f"OpenAI call failed: {e}. Falling back to mock data.")
+            parsed_summary = {
+                "client_name": "ABC Corp (API Fail)",
+                "project_id": "PRJ-FAIL",
+                "summary": "Failed to call OpenAI.",
+                "action_items": ["Check API Key"]
+            }
+    else:
+        # Fallback if no API key is configured yet
+        parsed_summary = {
+            "client_name": "ABC Corp",
+            "project_id": "PRJ-2023-01",
+            "summary": "Discussed the new ERP rollout schedule. Client requested faster delivery by Q3.",
+            "action_items": ["Send revised quote", "Schedule follow-up on Friday"]
+        }
 
     meeting_record = {
         "id": len(_MOCK_MEETINGS_DB) + 1,

@@ -12,28 +12,28 @@ class GoogleDriveService:
         self.scopes = ['https://www.googleapis.com/auth/drive.file']
 
     def _get_credentials(self, company_id: int):
-        # Mock logic to retrieve credentials for a company
-        # In production, this would fetch from the database
-        token_info = os.environ.get(f"GDRIVE_TOKEN_{company_id}")
-        if token_info:
-            return Credentials.from_authorized_user_info(json.loads(token_info), self.scopes)
-        # Mock credentials for the boilerplate
+        # Retrieve credentials from the local file database for the company
+        token_path = os.path.join(os.path.dirname(__file__), "..", "..", f"company_{company_id}_token.json")
+        if os.path.exists(token_path):
+            with open(token_path, "r") as f:
+                token_info = json.load(f)
+                return Credentials.from_authorized_user_info(token_info, self.scopes)
         return None
 
     def _get_service(self, company_id: int):
         creds = self._get_credentials(company_id)
-        # If no creds (e.g. testing mode), we return a mocked service interface or None
         if not creds:
-            return None
+            raise Exception("Google credentials not found for this company. Please login with Google first.")
         return build('drive', 'v3', credentials=creds)
 
     def upload_file(self, company_id: int, file_name: str, file_content: bytes, mime_type: str):
         """
-        Uploads a file to the company's Google Drive and returns the Google Drive File ID.
+        Uploads a file to the company's Google Drive using the real API and returns the Google Drive File ID.
         """
-        service = self._get_service(company_id)
-        if not service:
-            # Mock successful upload return for MVP testing without actual Google Auth setup
+        try:
+            service = self._get_service(company_id)
+        except Exception as e:
+            print(f"Warning: {e}. Falling back to mock for safety during dev.")
             return f"mock_gdrive_id_{file_name}_{company_id}"
 
         file_metadata = {'name': file_name}

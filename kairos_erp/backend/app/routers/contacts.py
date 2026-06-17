@@ -1,6 +1,8 @@
+import os
+import json
 from fastapi import APIRouter, UploadFile, File, Form, Depends
 from app.core.google_drive import drive_service
-import json
+from openai import OpenAI
 
 router = APIRouter(
     prefix="/contacts",
@@ -32,15 +34,45 @@ async def process_business_card(
         mime_type=file.content_type
     )
 
-    # 2. Simulate AI Vision OCR & Parsing (Token cost < 0.1 won)
-    # In reality, you'd pass `file_content` or `drive_id` to OpenAI/Gemini API here.
-    parsed_data = {
-        "name": "홍길동",
-        "email": "gildong@example.com",
-        "company": "대한상사",
-        "address": "서울시 강남구 테헤란로 123",
-        "phone_number": "010-1234-5678"
-    }
+    # 2. Real AI Vision OCR & Parsing via OpenAI (if key exists)
+    openai_key = os.getenv("OPENAI_API_KEY")
+    if openai_key:
+        try:
+            client = OpenAI(api_key=openai_key)
+            # In a real scenario, we would pass base64 encoded image to the vision model
+            # For this MVP code structure, we simulate the prompt to return JSON.
+            import base64
+            base64_image = base64.b64encode(file_content).decode('utf-8')
+            completion = client.chat.completions.create(
+                model="gpt-4o",
+                messages=[
+                    {"role": "system", "content": "You are an OCR assistant. Parse the business card image and return JSON strictly matching keys: name, email, company, address, phone_number."},
+                    {"role": "user", "content": [
+                        {"type": "text", "text": "Extract data from this business card."},
+                        {"type": "image_url", "image_url": {"url": f"data:{file.content_type};base64,{base64_image}"}}
+                    ]}
+                ],
+                response_format={ "type": "json_object" }
+            )
+            parsed_data = json.loads(completion.choices[0].message.content)
+        except Exception as e:
+            print(f"OpenAI call failed: {e}. Falling back to mock data.")
+            parsed_data = {
+                "name": "홍길동 (API Fail)",
+                "email": "fail@example.com",
+                "company": "대한상사",
+                "address": "서울시 강남",
+                "phone_number": "010-0000-0000"
+            }
+    else:
+        # Fallback if no API key is configured yet
+        parsed_data = {
+            "name": "홍길동",
+            "email": "gildong@example.com",
+            "company": "대한상사",
+            "address": "서울시 강남구 테헤란로 123",
+            "phone_number": "010-1234-5678"
+        }
 
     # 3. Save to Database
     contact_record = {
